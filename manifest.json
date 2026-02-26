@@ -1,0 +1,37 @@
+{
+"update_url": "https://clients2.google.com/service/update2/crx",
+
+  "manifest_version": 3,
+  "name": "__MSG_appName__",
+  "description": "__MSG_appDesc__",
+  "default_locale": "en",
+  "version": "0.2.3",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "declarativeNetRequest"
+  ],
+  "optional_permissions": [
+    "notifications",
+    "topSites",
+    "bookmarks",
+    "identity",
+    "identity.email",
+    "scripting"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "oauth2": {
+    "client_id": "469545263241-09aap3hfkq0h0j9na0u7poj0tkkis6gv.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/calendar"
+    ]
+  },
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  }
+}
