@@ -136,7 +136,7 @@
     </div>
 
     <!-- SEARCH FOOTER -->
-    <footer class="search-footer">
+    <footer class="search-footer" id="search-footer">
       <div class="search-wrap">
         <div class="search-icon">
           <span style="font-size:16px;">✨</span>
@@ -204,6 +204,7 @@
 
   <!-- SETTINGS PANEL -->
   <div class="settings-panel" id="settings-panel">
+    <button class="settings-close-x" id="settings-close-x">✕</button>
     <div class="settings-sidebar">
       <div class="settings-header">⚙ Settings</div>
       <button class="settings-tab active" data-stab="common">Common Settings</button>
@@ -214,10 +215,6 @@
     <div class="settings-content">
       <div id="stab-common" class="stab-pane active">
         <h5>Common Settings</h5>
-        <div class="settings-row">
-          <label>City (for weather)</label>
-          <input id="s-city" placeholder="City name">
-        </div>
         <div class="settings-row">
           <label>Language</label>
           <select id="s-lang" class="form-select">
@@ -261,6 +258,10 @@
           <label class="toggle-row"><input type="checkbox" id="t-notes" checked> Sticky Notes</label>
           <label class="toggle-row"><input type="checkbox" id="t-devto" checked> DevTo Feed</label>
           <label class="toggle-row"><input type="checkbox" id="t-search" checked> Search Bar</label>
+        </div>
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--divider);">
+          <button id="s-reset-layout" class="btn-primary" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); width: 100%;">Reset to Defaults</button>
+          <p style="font-size: 11px; color: var(--text-dim); margin-top: 8px; text-align: center;">This will reset all widget positions, sizes, and visibility.</p>
         </div>
       </div>
       

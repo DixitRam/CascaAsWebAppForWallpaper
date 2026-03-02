@@ -276,7 +276,6 @@ if (devtoWidget && !devtoWidget.querySelector('.devto-edit-overlay')) {
 function loadState() {
   const d = localStorage.getItem(STORE_KEY);
   const defaults = {
-    city: 'Ahmedabad',
     wallpaper: '',
     engine: 'Google',
     tasks: { todo: [], wip: [], done: [] },
@@ -361,31 +360,6 @@ function renderCal() {
 document.getElementById('cal-prev').addEventListener('click', () => { calM--; if (calM < 0) { calM = 11; calY--; } renderCal(); });
 document.getElementById('cal-next').addEventListener('click', () => { calM++; if (calM > 11) { calM = 0; calY++; } renderCal(); });
 
-// ===== WEATHER =====
-function fetchWeather() {
-  const city = S.city || 'Ahmedabad';
-  document.getElementById('w-city').textContent = city;
-  fetch(`https://wttr.in/${encodeURIComponent(city)}?format=%C+%t&m`)
-    .then(r => r.text())
-    .then(data => {
-      const parts = data.trim().split(/\s+/);
-      const temp = parts.pop();
-      const cond = parts.join(' ').toLowerCase();
-      document.getElementById('w-temp').textContent = temp;
-      let icon = '☀️';
-      if (cond.includes('cloud')) icon = '☁️';
-      else if (cond.includes('rain') || cond.includes('drizzle')) icon = '🌧️';
-      else if (cond.includes('snow')) icon = '🌨️';
-      else if (cond.includes('thunder')) icon = '⛈️';
-      else if (cond.includes('fog') || cond.includes('mist')) icon = '🌫️';
-      else if (cond.includes('partly')) icon = '⛅';
-      document.getElementById('w-icon').textContent = icon;
-    })
-    .catch(() => {
-      document.getElementById('w-temp').textContent = '--°';
-      document.getElementById('w-city').textContent = city;
-    });
-}
 
 // ===== KANBAN =====
 function renderKanban() {
@@ -701,16 +675,13 @@ document.getElementById('search-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const q = e.target.value.trim();
     if (q) {
-      const url = ENGINES[engineNames[engineIdx]] + encodeURIComponent(q);
       const searchModal = document.getElementById('search-modal');
       const searchIframe = document.getElementById('search-iframe');
       if(searchModal && searchIframe) {
         // Prevent generic 'X-Frame-Options: SAMEORIGIN' blocks on modern search engines
         // Note: For full production use with Google/Bing, a backend proxy is required
         // due to strict X-Frame-Options policies. We'll use Bing for the demo.
-        let finalUrl = url;
-        // Default Google/Bing block iframes. DuckDuckGo or Bing embedded works better.
-        if (engineNames[engineIdx] === 'Google') finalUrl = 'https://www.bing.com/search?q=' + encodeURIComponent(q);
+        let finalUrl = 'https://www.bing.com/copilotsearch?q=' + encodeURIComponent(q);
         
         searchIframe.src = finalUrl;
         searchModal.classList.add('open');
@@ -739,7 +710,6 @@ function applyWallpaper() {
 const settingsPanel = document.getElementById('settings-panel');
 document.getElementById('settings-btn').addEventListener('click', () => {
   settingsPanel.classList.add('open');
-  document.getElementById('s-city').value = S.city || '';
   document.getElementById('s-wall').value = S.wallpaper || '';
   document.getElementById('s-engine').value = S.engine || 'Google';
   document.getElementById('s-lang').value = S.lang || 'en';
@@ -747,10 +717,15 @@ document.getElementById('settings-btn').addEventListener('click', () => {
   if(h) h.checked = !!S.use24h;
   
   if (S.hiddenWidgets) {
-    ['clock', 'calendar', 'kanban', 'notes', 'devto', 'search'].forEach(w => {
+    const widgetTypes = ['clock', 'calendar', 'kanban', 'notes', 'devto', 'search'];
+    widgetTypes.forEach(w => {
       const toggle = document.getElementById('t-' + w);
       if (toggle) {
-        toggle.checked = !S.hiddenWidgets.includes(w === 'notes' ? 'widget-stickies' : 'widget-' + w);
+        let id;
+        if (w === 'notes') id = 'widget-notes-header';
+        else if (w === 'search') id = 'search-footer';
+        else id = 'widget-' + w;
+        toggle.checked = !S.hiddenWidgets.includes(id);
       }
     });
   }
@@ -772,63 +747,110 @@ if(closeX) closeX.addEventListener('click', () => {
 });
 
 document.getElementById('settings-save').addEventListener('click', () => {
-  S.city = document.getElementById('s-city').value.trim();
-  S.wallpaper = document.getElementById('s-wall').value.trim();
-  const eng = document.getElementById('s-engine');
-  if(eng) S.engine = eng.value;
-  const lang = document.getElementById('s-lang');
-  if(lang) S.lang = lang.value;
-  const h = document.getElementById('s-24h');
-  if(h) S.use24h = h.checked;
-  
-  S.hiddenWidgets = [];
-  const map = {
-    'clock': 'widget-clock',
-    'calendar': 'widget-calendar',
-    'kanban': 'widget-kanban',
-    'notes': 'widget-notes-header',
-    'stickies': 'widget-stickies',
-    'devto': 'widget-devto',
-    'search': 'search-input'
-  };
-  ['clock', 'calendar', 'kanban', 'notes', 'devto'].forEach(w => {
-    const toggle = document.getElementById('t-' + w);
-    if (toggle && !toggle.checked) {
-      if (w === 'notes') {
-        S.hiddenWidgets.push(map['notes']);
-        notesVisible = false;
+  try {
+    S.wallpaper = document.getElementById('s-wall').value.trim();
+    const eng = document.getElementById('s-engine');
+    if(eng) S.engine = eng.value;
+    const lang = document.getElementById('s-lang');
+    if(lang) S.lang = lang.value;
+    const h = document.getElementById('s-24h');
+    if(h) S.use24h = h.checked;
+    
+    S.hiddenWidgets = [];
+    const widgetTypes = ['clock', 'calendar', 'kanban', 'notes', 'devto', 'search'];
+    widgetTypes.forEach(w => {
+      const toggle = document.getElementById('t-' + w);
+      if (toggle && !toggle.checked) {
+        if (w === 'notes') {
+          S.hiddenWidgets.push('widget-notes-header');
+          notesVisible = false;
+          renderNotes();
+        } else if (w === 'search') {
+          S.hiddenWidgets.push('search-footer');
+        } else {
+          S.hiddenWidgets.push('widget-' + w);
+        }
+      } else if (w === 'notes' && toggle && toggle.checked) {
+        notesVisible = true;
         renderNotes();
-      } else {
-        S.hiddenWidgets.push(map[w]);
       }
-    } else if (w === 'notes' && toggle && toggle.checked) {
-      notesVisible = true;
-      renderNotes();
+    });
+    
+    save();
+    applyWallpaper();
+    updateClock();
+    
+    // Show all first
+    document.querySelectorAll('.widget').forEach(w => w.style.display = 'block');
+    const searchFooter = document.querySelector('.search-footer');
+    if (searchFooter) searchFooter.style.display = 'flex';
+
+    // Hide ones in S.hiddenWidgets
+    S.hiddenWidgets.forEach(wid => {
+      let el = document.getElementById(wid);
+      if(!el && wid === 'search-footer') el = document.querySelector('.search-footer');
+      if(el) el.style.display = 'none';
+    });
+    
+    if (document.getElementById('main-grid').classList.contains('has-layout')) {
+      LayoutManager.applyLayout(LayoutManager.getLayout());
     }
-  });
-  
-  save();
-  applyWallpaper();
-  fetchWeather();
-  updateClock();
-  
-  document.querySelectorAll('.widget').forEach(w => w.style.display = 'block');
-  S.hiddenWidgets.forEach(wid => {
-    const w = document.getElementById(wid);
-    if(w) w.style.display = 'none';
-  });
-  
-  if (document.getElementById('main-grid').classList.contains('has-layout')) {
-    LayoutManager.applyLayout(LayoutManager.getLayout());
+  } catch (err) {
+    console.error("Error saving settings:", err);
+  } finally {
+  // ALWAYS close the panel
+    settingsPanel.classList.remove('open');
   }
-  
-  settingsPanel.classList.remove('open');
+});
+
+document.getElementById('s-reset-layout').addEventListener('click', () => {
+  if (confirm('Are you sure you want to reset the layout to defaults? This will clear all custom positions and show all widgets.')) {
+    // 1. Clear layout store
+    localStorage.removeItem(LAYOUT_KEY);
+    
+    // 2. Reset visibility state
+    S.hiddenWidgets = [];
+    notesVisible = true;
+    save();
+    
+    // 3. Reset inline styles (absolute positions/sizes)
+    document.querySelectorAll('.widget').forEach(w => {
+      w.style.left = '';
+      w.style.top = '';
+      w.style.width = '';
+      w.style.height = '';
+      w.style.display = 'block';
+    });
+    
+    const searchFooter = document.getElementById('search-footer');
+    if (searchFooter) searchFooter.style.display = 'flex';
+    
+    // 4. Reset grid class
+    document.getElementById('main-grid').classList.remove('has-layout');
+    
+    // 5. Sync settings UI toggles
+    const widgetTypes = ['clock', 'calendar', 'kanban', 'notes', 'devto', 'search'];
+    widgetTypes.forEach(w => {
+      const toggle = document.getElementById('t-' + w);
+      if (toggle) toggle.checked = true;
+    });
+    
+    // 6. Refresh components
+    applyWallpaper();
+    updateClock();
+    renderNotes();
+    
+    // 7. Close settings
+    settingsPanel.classList.remove('open');
+    
+    // Optional: Refresh page to be absolutely sure or just let the DOM updates handle it
+    // location.reload(); 
+  }
 });
 
 // ===== INIT =====
 initCal();
 applyWallpaper();
-fetchWeather();
 renderKanban();
 renderNotes();
 fetchDev();

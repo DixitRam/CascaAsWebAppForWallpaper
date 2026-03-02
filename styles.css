@@ -101,16 +101,6 @@ body {
 }
 .space-icon svg { width: 12px; height: 12px; color: white; }
 
-.weather-pill {
-  display: flex; align-items: center; gap: 6px;
-  padding: 7px 14px;
-  background: var(--card-bg); backdrop-filter: blur(var(--blur));
-  border: 1px solid var(--card-border); border-radius: 28px;
-  font-size: 13px;
-}
-.weather-pill .temp { font-weight: 600; }
-.weather-pill .city { color: var(--text-secondary); font-size: 12px; }
-
 .icon-btn {
   width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center;
