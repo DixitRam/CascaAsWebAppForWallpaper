@@ -18,6 +18,44 @@ let S = {};
 let calM, calY;
 let LAYOUT_FILE_DATA = { state: {}, layout: {} };
 
+// ===== SILENT STORAGE (LocalStorage + Cache API Fallback) =====
+const SilentStorage = {
+  cacheName: 'casca-silent-v1',
+  dataUrl: 'https://casca.internal/state.json',
+
+  async save(key, data) {
+    // 1. LocalStorage (Primary)
+    localStorage.setItem(key, JSON.stringify(data));
+
+    // 2. Cache API (Silent Fallback)
+    if ('caches' in window) {
+      try {
+        const cache = await caches.open(this.cacheName);
+        const response = new Response(JSON.stringify(data), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+        await cache.put(this.dataUrl + '?key=' + key, response);
+      } catch (e) { console.warn("Cache save failed", e); }
+    }
+  },
+
+  async load(key) {
+    // 1. Try LocalStorage
+    const local = localStorage.getItem(key);
+    if (local) return JSON.parse(local);
+
+    // 2. Try Cache API Fallback
+    if ('caches' in window) {
+      try {
+        const cache = await caches.open(this.cacheName);
+        const response = await cache.match(this.dataUrl + '?key=' + key);
+        if (response) return await response.json();
+      } catch (e) { console.warn("Cache load failed", e); }
+    }
+    return null;
+  }
+};
+
 // ===== LAYOUT MANAGER =====
 const LayoutManager = (() => {
   const grid = document.getElementById('main-grid');
@@ -36,8 +74,13 @@ const LayoutManager = (() => {
     const local = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
     return { ...fileLayout, ...local };
   }
+  async function getLayoutAsync() {
+    const fileLayout = LAYOUT_FILE_DATA.layout || {};
+    const stored = await SilentStorage.load(LAYOUT_KEY) || {};
+    return { ...fileLayout, ...stored };
+  }
   function saveLayout(layout) {
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+    SilentStorage.save(LAYOUT_KEY, layout);
   }
 
   // Snapshot current bounding rects relative to grid
@@ -260,11 +303,16 @@ const LayoutManager = (() => {
 })();
 
 function initPersistence() {
+  // 1. Load from savedLayout.json as "Base Defaults" (if exists)
   fetch('savedLayout.json')
     .then(res => res.ok ? res.json() : { state: {}, layout: {} })
-    .then(data => {
-      LAYOUT_FILE_DATA = data;
-      S = loadState();
+    .catch(() => ({ state: {}, layout: {} }))
+    .then(async (fileData) => {
+      LAYOUT_FILE_DATA = fileData;
+      
+      // 2. Try Silent Storage (LocalStorage -> Cache API)
+      const storedState = await SilentStorage.load(STORE_KEY);
+      S = loadState(storedState);
       
       // Apply hidden widgets on load
       if (!S.hiddenWidgets) S.hiddenWidgets = [];
@@ -279,7 +327,7 @@ function initPersistence() {
       });
 
       // Apply layout if exists
-      const saved = LayoutManager.getLayout();
+      const saved = await LayoutManager.getLayoutAsync();
       if (Object.keys(saved).length > 0) {
         document.getElementById('main-grid').classList.add('has-layout');
         LayoutManager.applyLayout(saved);
@@ -291,21 +339,10 @@ function initPersistence() {
       renderKanban();
       renderNotes();
       fetchDev();
-    })
-    .catch(e => {
-      console.warn("Persistence init failed:", e);
-      // Fallback to local only
-      S = loadState();
-      initCal();
-      applyWallpaper();
-      renderKanban();
-      renderNotes();
-      fetchDev();
     });
 }
 
-function loadState() {
-  const d = localStorage.getItem(STORE_KEY);
+function loadState(stored) {
   const defaults = {
     wallpaper: '',
     engine: 'Google',
@@ -322,52 +359,71 @@ function loadState() {
     hiddenWidgets: []
   };
 
-  // Merge Priority: LocalStorage > layout.json > Hardcoded defaults
   const fileState = LAYOUT_FILE_DATA.state || {};
   let baseState = { ...defaults, ...fileState };
   
-  if (!d) return baseState;
-  try {
-    const parsed = JSON.parse(d);
-    return { ...baseState, ...parsed };
-  } catch { return baseState; }
+  if (!stored) return baseState;
+  return { ...baseState, ...stored };
 }
 
 function save() { 
-  localStorage.setItem(STORE_KEY, JSON.stringify(S)); 
+  SilentStorage.save(STORE_KEY, S); 
 }
 
-// Export logic for static file
+// Backup helpers (Optional Rescue)
 document.getElementById('btn-export-json').addEventListener('click', () => {
-  const data = {
-    state: S,
-    layout: LayoutManager.getLayout()
-  };
-  const jsonStr = JSON.stringify(data, null, 2);
-  
-  // Create a blob and download it
-  const blob = new Blob([jsonStr], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+  const data = { state: S, layout: LayoutManager.getLayout() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'savedLayout.json';
+  a.href = URL.createObjectURL(blob);
+  a.download = 'casca_backup.json';
   a.click();
-  
-  alert("Layout JSON generated! Please replace your 'savedLayout.json' file with this one to save permanently.");
 });
 
 document.getElementById('btn-paste-clipboard').addEventListener('click', () => {
-  const val = prompt("Paste your dashboard data string here:");
+  const val = prompt("Paste backup JSON here:");
   if (val) {
     try {
       const data = JSON.parse(val);
       if (data.state) S = { ...S, ...data.state };
-      if (data.layout) LayoutManager.saveLayout(data.layout);
+      if (data.layout) SilentStorage.save(LAYOUT_KEY, data.layout);
       save();
       window.location.reload();
-    } catch (e) { alert("Invalid data string"); }
+    } catch (e) { alert("Invalid backup format"); }
   }
 });
+
+// Debug Console Helper (F12 Keyboard Event Trigger)
+const debugBtn = document.getElementById('btn-debug-console');
+if (debugBtn) {
+  debugBtn.addEventListener('click', () => {
+    // Dispatch F12 keyboard event to attempt opening the console
+    const f12Event = new KeyboardEvent('keydown', {
+      key: 'F12',
+      keyCode: 123,
+      which: 123,
+      code: 'F12',
+      location: 0,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+      bubbles: true,
+      cancelable: true
+    });
+    
+    document.dispatchEvent(f12Event);
+    
+    // Provide visual feedback
+    const originalText = debugBtn.textContent;
+    debugBtn.textContent = "F12 Triggered!";
+    setTimeout(() => { debugBtn.textContent = originalText; }, 2000);
+    
+    // Close settings
+    settingsPanel.classList.remove('open');
+  });
+}
 
 // ===== CLOCK =====
 function updateClock() {

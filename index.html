@@ -269,32 +269,35 @@
       <div id="stab-storage" class="stab-pane">
         <h5>Backup & Storage</h5>
         <div class="backup-storage-grid">
-          <div class="backup-section" style="background: rgba(99, 102, 241, 0.1); border: 1px solid var(--accent);">
-            <h6 style="color: var(--accent);">Persistent Layout File</h6>
+          <div class="backup-section" style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981;">
+            <h6 style="color: #10b981;">Silent Persistence Active</h6>
             <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 15px; line-height: 1.5;">
-              Since this is a static site, you must manually update the <code>savedLayout.json</code> file in your repository to save changes permanently.
+              Your dashboard now uses <strong>Multi-Layer Storage</strong> (LocalStorage + Internal Cache). Changes are saved automatically and securely on your device.
             </p>
-            <div class="backup-actions">
-              <button id="btn-export-json" class="btn-primary" style="width: 100%; justify-content: center; display: flex; align-items: center; gap: 8px;">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Regenerate Layout JSON
-              </button>
-            </div>
           </div>
           
           <div class="backup-section" style="margin-top: 10px;">
-            <h6>One-time Restore</h6>
-            <p style="font-size: 11px; color: var(--text-dim); margin-bottom: 10px;">Quickly restore a previous backup string without updating the file.</p>
-            <button id="btn-paste-clipboard" class="btn-outline" style="width: 100%;">
-               Paste from Clipboard
-            </button>
+            <h6>Manual Backup</h6>
+            <p style="font-size: 11px; color: var(--text-dim); margin-bottom: 10px;">Download a backup file or restore from a previous one if you change browsers.</p>
+            <div style="display: flex; gap: 8px;">
+              <button id="btn-export-json" class="btn-outline" style="flex: 1; font-size: 11px; height: 32px;">Download Backup</button>
+              <button id="btn-paste-clipboard" class="btn-outline" style="flex: 1; font-size: 11px; height: 32px;">Restore from Clipboard</button>
+            </div>
           </div>
         </div>
       </div>
       
       <div id="stab-experimental" class="stab-pane">
         <h5>Experimental</h5>
-        <p style="font-size:12px;color:var(--text-dim);">Advanced features like "Blur effects" and "Widget animations"</p>
+        <div class="settings-row" style="margin-bottom: 20px;">
+          <label>Troubleshooting</label>
+          <p style="font-size: 11px; color: var(--text-dim); margin-bottom: 10px;">Attempt to open the browser's developer tools by triggering a system F12 event.</p>
+          <button id="btn-debug-console" class="btn-primary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(99, 102, 241, 0.2); color: var(--accent); border: 1px solid var(--accent);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            Open System Console (F12)
+          </button>
+        </div>
+        <p style="font-size:12px;color:var(--text-dim); opacity: 0.5;">Advanced features like "Blur effects" and "Widget animations" coming soon.</p>
       </div>
 
     </div>
