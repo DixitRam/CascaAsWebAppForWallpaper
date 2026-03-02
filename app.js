@@ -18,16 +18,42 @@ let S = {};
 let calM, calY;
 let LAYOUT_FILE_DATA = { state: {}, layout: {} };
 
-// ===== SILENT STORAGE (LocalStorage + Cache API Fallback) =====
+// ===== SILENT STORAGE (LocalStorage + IndexedDB + Cache API) =====
 const SilentStorage = {
   cacheName: 'casca-silent-v1',
+  dbName: 'CascaDB',
+  dbStore: 'DashboardState',
   dataUrl: 'https://casca.internal/state.json',
 
-  async save(key, data) {
-    // 1. LocalStorage (Primary)
-    localStorage.setItem(key, JSON.stringify(data));
+  _dbPromise: null,
+  getDB() {
+    if (this._dbPromise) return this._dbPromise;
+    this._dbPromise = new Promise((resolve) => {
+      const req = indexedDB.open(this.dbName, 1);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(this.dbStore)) {
+          db.createObjectStore(this.dbStore);
+        }
+      };
+      req.onsuccess = (e) => resolve(e.target.result);
+      req.onerror = () => resolve(null);
+    });
+    return this._dbPromise;
+  },
 
-    // 2. Cache API (Silent Fallback)
+  async save(key, data) {
+    // 1. LocalStorage
+    try { localStorage.setItem(key, JSON.stringify(data)); } catch(e){}
+
+    // 2. IndexedDB
+    const db = await this.getDB();
+    if (db) {
+      const tx = db.transaction(this.dbStore, 'readwrite');
+      tx.objectStore(this.dbStore).put(data, key);
+    }
+
+    // 3. Cache API
     if ('caches' in window) {
       try {
         const cache = await caches.open(this.cacheName);
@@ -42,9 +68,21 @@ const SilentStorage = {
   async load(key) {
     // 1. Try LocalStorage
     const local = localStorage.getItem(key);
-    if (local) return JSON.parse(local);
+    if (local) try { return JSON.parse(local); } catch(e){}
 
-    // 2. Try Cache API Fallback
+    // 2. Try IndexedDB
+    const db = await this.getDB();
+    if (db) {
+      const val = await new Promise(r => {
+        const tx = db.transaction(this.dbStore, 'readonly');
+        const req = tx.objectStore(this.dbStore).get(key);
+        req.onsuccess = () => r(req.result);
+        req.onerror = () => r(null);
+      });
+      if (val) return val;
+    }
+
+    // 3. Try Cache API Fallback
     if ('caches' in window) {
       try {
         const cache = await caches.open(this.cacheName);
@@ -830,7 +868,9 @@ if(searchCloseBtn) {
 function applyWallpaper() {
   const bg = document.getElementById('bg-wallpaper');
   if (S.wallpaper) {
-    bg.style.backgroundImage = `url('${S.wallpaper}')`;
+    // If it's a local file path, ensure it's wrapped correctly
+    const url = S.wallpaper.startsWith('file://') ? S.wallpaper : S.wallpaper;
+    bg.style.backgroundImage = `url('${url}')`;
   }
 }
 
