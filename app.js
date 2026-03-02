@@ -27,7 +27,9 @@ const LayoutManager = (() => {
   let startX, startY, startLeft, startTop, startW, startH;
 
   function getLayout() {
-    return JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
+    const fileLayout = LAYOUT_FILE_DATA.layout || {};
+    const local = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
+    return { ...fileLayout, ...local };
   }
   function saveLayout(layout) {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
@@ -245,32 +247,48 @@ const LayoutManager = (() => {
   return { enterEditMode, exitEditMode, getLayout, applyLayout };
 })();
 
-// ===== STATE =====
-let S = loadState();
+// ===== STATE & PERSISTENCE =====
+let S = {};
 let calM, calY;
+let LAYOUT_FILE_DATA = { state: {}, layout: {} };
 
-// Handle hidden widgets on load
-if (!S.hiddenWidgets) S.hiddenWidgets = [];
-S.hiddenWidgets.forEach(wid => {
-  const w = document.getElementById(wid);
-  if (w) w.style.display = 'none';
-  const wType = w ? w.dataset.widget : null;
-  if (wType) {
-    const t = document.getElementById('t-' + wType);
-    if (t) t.checked = false;
+async function initPersistence() {
+  try {
+    const res = await fetch('savedLayout.json');
+    if (res.ok) {
+      LAYOUT_FILE_DATA = await res.json();
+    }
+  } catch (e) {
+    console.warn("Could not load savedLayout.json, using defaults.");
   }
-});
-
-// DevTo Edit Overlay
-const devtoWidget = document.getElementById('widget-devto');
-if (devtoWidget && !devtoWidget.querySelector('.devto-edit-overlay')) {
-  const overlay = document.createElement('div');
-  overlay.className = 'devto-edit-overlay';
-  overlay.innerHTML = '<button class="devto-edit-btn">Edit Feed</button>';
-  devtoWidget.appendChild(overlay);
-  overlay.querySelector('button').addEventListener('click', () => {
-    alert("Devto feed settings coming soon!");
+  
+  S = loadState();
+  
+  // Apply hidden widgets on load
+  if (!S.hiddenWidgets) S.hiddenWidgets = [];
+  S.hiddenWidgets.forEach(wid => {
+    const w = document.getElementById(wid);
+    if (w) w.style.display = 'none';
+    const wType = w ? w.dataset.widget : null;
+    if (wType) {
+      const t = document.getElementById('t-' + wType);
+      if (t) t.checked = false;
+    }
   });
+
+  // Apply layout if exists
+  const saved = LayoutManager.getLayout();
+  if (Object.keys(saved).length > 0) {
+    document.getElementById('main-grid').classList.add('has-layout');
+    LayoutManager.applyLayout(saved);
+  }
+
+  // Final Dashboard Init
+  initCal();
+  applyWallpaper();
+  renderKanban();
+  renderNotes();
+  fetchDev();
 }
 
 function loadState() {
@@ -288,14 +306,55 @@ function loadState() {
       { id: 1, text: 'Type here...', color: '#f5e960', x: 670, y: 350 },
     ],
     nextNoteId: 2,
+    hiddenWidgets: []
   };
-  if (!d) return defaults;
+
+  // Merge Priority: LocalStorage > layout.json > Hardcoded defaults
+  const fileState = LAYOUT_FILE_DATA.state || {};
+  let baseState = { ...defaults, ...fileState };
+  
+  if (!d) return baseState;
   try {
     const parsed = JSON.parse(d);
-    return { ...defaults, ...parsed };
-  } catch { return defaults; }
+    return { ...baseState, ...parsed };
+  } catch { return baseState; }
 }
-function save() { localStorage.setItem(STORE_KEY, JSON.stringify(S)); }
+
+function save() { 
+  localStorage.setItem(STORE_KEY, JSON.stringify(S)); 
+}
+
+// Export logic for static file
+document.getElementById('btn-export-json').addEventListener('click', () => {
+  const data = {
+    state: S,
+    layout: LayoutManager.getLayout()
+  };
+  const jsonStr = JSON.stringify(data, null, 2);
+  
+  // Create a blob and download it
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'savedLayout.json';
+  a.click();
+  
+  alert("Layout JSON generated! Please replace your 'savedLayout.json' file with this one to save permanently.");
+});
+
+document.getElementById('btn-paste-clipboard').addEventListener('click', () => {
+  const val = prompt("Paste your dashboard data string here:");
+  if (val) {
+    try {
+      const data = JSON.parse(val);
+      if (data.state) S = { ...S, ...data.state };
+      if (data.layout) LayoutManager.saveLayout(data.layout);
+      save();
+      window.location.reload();
+    } catch (e) { alert("Invalid data string"); }
+  }
+});
 
 // ===== CLOCK =====
 function updateClock() {
@@ -849,8 +908,4 @@ document.getElementById('s-reset-layout').addEventListener('click', () => {
 });
 
 // ===== INIT =====
-initCal();
-applyWallpaper();
-renderKanban();
-renderNotes();
-fetchDev();
+initPersistence();

@@ -210,6 +210,7 @@
       <button class="settings-tab active" data-stab="common">Common Settings</button>
       <button class="settings-tab" data-stab="wallpapers">Wallpapers</button>
       <button class="settings-tab" data-stab="widgets">Widgets</button>
+      <button class="settings-tab" data-stab="storage">Backup & Storage</button>
       <button class="settings-tab" data-stab="experimental">Experimental</button>
     </div>
     <div class="settings-content">
@@ -262,6 +263,32 @@
         <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--divider);">
           <button id="s-reset-layout" class="btn-primary" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); width: 100%;">Reset to Defaults</button>
           <p style="font-size: 11px; color: var(--text-dim); margin-top: 8px; text-align: center;">This will reset all widget positions, sizes, and visibility.</p>
+        </div>
+      </div>
+
+      <div id="stab-storage" class="stab-pane">
+        <h5>Backup & Storage</h5>
+        <div class="backup-storage-grid">
+          <div class="backup-section" style="background: rgba(99, 102, 241, 0.1); border: 1px solid var(--accent);">
+            <h6 style="color: var(--accent);">Persistent Layout File</h6>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 15px; line-height: 1.5;">
+              Since this is a static site, you must manually update the <code>savedLayout.json</code> file in your repository to save changes permanently.
+            </p>
+            <div class="backup-actions">
+              <button id="btn-export-json" class="btn-primary" style="width: 100%; justify-content: center; display: flex; align-items: center; gap: 8px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Regenerate Layout JSON
+              </button>
+            </div>
+          </div>
+          
+          <div class="backup-section" style="margin-top: 10px;">
+            <h6>One-time Restore</h6>
+            <p style="font-size: 11px; color: var(--text-dim); margin-bottom: 10px;">Quickly restore a previous backup string without updating the file.</p>
+            <button id="btn-paste-clipboard" class="btn-outline" style="width: 100%;">
+               Paste from Clipboard
+            </button>
+          </div>
         </div>
       </div>
       

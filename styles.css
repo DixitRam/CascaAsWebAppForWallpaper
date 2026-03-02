@@ -631,6 +631,52 @@ body {
   border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer;
 }
 .settings-save:hover { filter: brightness(1.15); }
+
+/* ===== BACKUP & STORAGE ===== */
+.backup-storage-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.backup-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+}
+.backup-section h6 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.backup-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.btn-outline {
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.btn-outline:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--text-secondary);
+}
 /* ===== FADE IN ===== */
 .fade-in { animation: fadeIn 0.5s ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

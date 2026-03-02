@@ -1,0 +1,22 @@
+{
+  "state": {
+    "wallpaper": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80",
+    "engine": "Google",
+    "tasks": {
+      "todo": [],
+      "wip": [],
+      "done": []
+    },
+    "labels": [
+      { "id": 1, "name": "LABEL 1", "color": "#ff6b6b" },
+      { "id": 2, "name": "LABEL 2", "color": "#b8c0ff" }
+    ],
+    "nextLabelId": 3,
+    "notes": [
+      { "id": 1, "text": "Welcome to your new dashboard! Change the layout and export the config to save permanently.", "color": "#f5e960", "x": 670, "y": 350 }
+    ],
+    "nextNoteId": 2,
+    "hiddenWidgets": []
+  },
+  "layout": {}
+}
