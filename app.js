@@ -13,6 +13,11 @@ const LABEL_COLORS = [
 ];
 const NOTE_COLORS = ['#f5e960','#a8e6cf','#a8d8ea','#ffb7b2','#c9b1ff'];
 
+// ===== STATE & PERSISTENCE =====
+let S = {};
+let calM, calY;
+let LAYOUT_FILE_DATA = { state: {}, layout: {} };
+
 // ===== LAYOUT MANAGER =====
 const LayoutManager = (() => {
   const grid = document.getElementById('main-grid');
@@ -36,12 +41,18 @@ const LayoutManager = (() => {
   }
 
   // Snapshot current bounding rects relative to grid
-  function snapshotPositions() {
+  function snapshotPositions(force = false) {
     const gridRect = grid.getBoundingClientRect();
     const layout = getLayout();
+    
     widgets.forEach(w => {
       const id = w.id;
-      if (!layout[id]) {
+      const pos = layout[id];
+      
+      // If force is true OR no valid position data, calculate from DOM
+      const isInvalid = !pos || typeof pos.x !== 'number' || (pos.x === 0 && pos.y === 0 && w.id !== 'widget-calendar');
+
+      if (force || isInvalid) {
         const wasHidden = w.style.display === 'none';
         if (wasHidden) {
           w.style.visibility = 'hidden';
@@ -49,10 +60,10 @@ const LayoutManager = (() => {
         }
         const r = w.getBoundingClientRect();
         layout[id] = {
-          x: r.left - gridRect.left,
-          y: r.top - gridRect.top,
-          w: r.width,
-          h: r.height
+          x: Math.round(r.left - gridRect.left),
+          y: Math.round(r.top - gridRect.top),
+          w: Math.round(r.width),
+          h: Math.round(r.height)
         };
         if (wasHidden) {
           w.style.display = 'none';
@@ -65,9 +76,10 @@ const LayoutManager = (() => {
   }
 
   function applyLayout(layout) {
+    if (!layout) return;
     widgets.forEach(w => {
       const pos = layout[w.id];
-      if (pos) {
+      if (pos && typeof pos.x === 'number') {
         w.style.left = pos.x + 'px';
         w.style.top = pos.y + 'px';
         w.style.width = pos.w + 'px';
@@ -87,7 +99,8 @@ const LayoutManager = (() => {
 
   function enterEditMode() {
     editing = true;
-    const layout = snapshotPositions();
+    const isFirstTime = !grid.classList.contains('has-layout');
+    const layout = snapshotPositions(isFirstTime);
     grid.classList.add('has-layout', 'edit-mode');
     applyLayout(layout);
     banner.classList.add('visible');
@@ -96,13 +109,12 @@ const LayoutManager = (() => {
 
   function exitEditMode() {
     editing = false;
-    // Save final positions
     const layout = getLayout();
     widgets.forEach(w => {
-      if (w.style.display !== 'none') {
+      if (w.style.display !== 'none' && w.style.left) {
         layout[w.id] = {
-          x: parseFloat(w.style.left) || 0,
-          y: parseFloat(w.style.top) || 0,
+          x: parseInt(w.style.left) || 0,
+          y: parseInt(w.style.top) || 0,
           w: w.offsetWidth,
           h: w.offsetHeight
         };
@@ -247,48 +259,49 @@ const LayoutManager = (() => {
   return { enterEditMode, exitEditMode, getLayout, applyLayout };
 })();
 
-// ===== STATE & PERSISTENCE =====
-let S = {};
-let calM, calY;
-let LAYOUT_FILE_DATA = { state: {}, layout: {} };
+function initPersistence() {
+  fetch('savedLayout.json')
+    .then(res => res.ok ? res.json() : { state: {}, layout: {} })
+    .then(data => {
+      LAYOUT_FILE_DATA = data;
+      S = loadState();
+      
+      // Apply hidden widgets on load
+      if (!S.hiddenWidgets) S.hiddenWidgets = [];
+      S.hiddenWidgets.forEach(wid => {
+        const w = document.getElementById(wid);
+        if (w) w.style.display = 'none';
+        const wType = w ? w.dataset.widget : null;
+        if (wType) {
+          const t = document.getElementById('t-' + wType);
+          if (t) t.checked = false;
+        }
+      });
 
-async function initPersistence() {
-  try {
-    const res = await fetch('savedLayout.json');
-    if (res.ok) {
-      LAYOUT_FILE_DATA = await res.json();
-    }
-  } catch (e) {
-    console.warn("Could not load savedLayout.json, using defaults.");
-  }
-  
-  S = loadState();
-  
-  // Apply hidden widgets on load
-  if (!S.hiddenWidgets) S.hiddenWidgets = [];
-  S.hiddenWidgets.forEach(wid => {
-    const w = document.getElementById(wid);
-    if (w) w.style.display = 'none';
-    const wType = w ? w.dataset.widget : null;
-    if (wType) {
-      const t = document.getElementById('t-' + wType);
-      if (t) t.checked = false;
-    }
-  });
+      // Apply layout if exists
+      const saved = LayoutManager.getLayout();
+      if (Object.keys(saved).length > 0) {
+        document.getElementById('main-grid').classList.add('has-layout');
+        LayoutManager.applyLayout(saved);
+      }
 
-  // Apply layout if exists
-  const saved = LayoutManager.getLayout();
-  if (Object.keys(saved).length > 0) {
-    document.getElementById('main-grid').classList.add('has-layout');
-    LayoutManager.applyLayout(saved);
-  }
-
-  // Final Dashboard Init
-  initCal();
-  applyWallpaper();
-  renderKanban();
-  renderNotes();
-  fetchDev();
+      // Final Dashboard Init
+      initCal();
+      applyWallpaper();
+      renderKanban();
+      renderNotes();
+      fetchDev();
+    })
+    .catch(e => {
+      console.warn("Persistence init failed:", e);
+      // Fallback to local only
+      S = loadState();
+      initCal();
+      applyWallpaper();
+      renderKanban();
+      renderNotes();
+      fetchDev();
+    });
 }
 
 function loadState() {
