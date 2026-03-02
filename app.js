@@ -1,0 +1,834 @@
+// ============================================
+//  CASCA LITE — Dashboard Logic
+// ============================================
+
+const STORE_KEY = 'casca_lite_v3';
+const LAYOUT_KEY = 'casca_widget_layout';
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS_FULL = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+const WK = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+const ENGINES = { Google:'https://www.google.com/search?q=', Bing:'https://www.bing.com/search?q=', DuckDuckGo:'https://duckduckgo.com/?q=' };
+const LABEL_COLORS = [
+  '#ff6b6b','#ffa07a','#ffd93d','#a8e6cf','#88d8b0','#b8c0ff','#c9b1ff','#9d8df1','#f8a5c2','#f3c4fb'
+];
+const NOTE_COLORS = ['#f5e960','#a8e6cf','#a8d8ea','#ffb7b2','#c9b1ff'];
+
+// ===== LAYOUT MANAGER =====
+const LayoutManager = (() => {
+  const grid = document.getElementById('main-grid');
+  const overlay = document.getElementById('drag-overlay');
+  const banner = document.getElementById('edit-banner');
+  const editBtn = document.getElementById('edit-layout-btn');
+  const doneBtn = document.getElementById('edit-done-btn');
+  const widgets = Array.from(grid.querySelectorAll('.widget'));
+
+  let editing = false;
+  let dragTarget = null, resizeTarget = null;
+  let startX, startY, startLeft, startTop, startW, startH;
+
+  function getLayout() {
+    return JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
+  }
+  function saveLayout(layout) {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+  }
+
+  // Snapshot current bounding rects relative to grid
+  function snapshotPositions() {
+    const gridRect = grid.getBoundingClientRect();
+    const layout = getLayout();
+    widgets.forEach(w => {
+      const id = w.id;
+      if (!layout[id]) {
+        const wasHidden = w.style.display === 'none';
+        if (wasHidden) {
+          w.style.visibility = 'hidden';
+          w.style.display = 'block';
+        }
+        const r = w.getBoundingClientRect();
+        layout[id] = {
+          x: r.left - gridRect.left,
+          y: r.top - gridRect.top,
+          w: r.width,
+          h: r.height
+        };
+        if (wasHidden) {
+          w.style.display = 'none';
+          w.style.visibility = '';
+        }
+      }
+    });
+    saveLayout(layout);
+    return layout;
+  }
+
+  function applyLayout(layout) {
+    widgets.forEach(w => {
+      const pos = layout[w.id];
+      if (pos) {
+        w.style.left = pos.x + 'px';
+        w.style.top = pos.y + 'px';
+        w.style.width = pos.w + 'px';
+        w.style.height = pos.h + 'px';
+      }
+    });
+  }
+
+  function clearInlineStyles() {
+    widgets.forEach(w => {
+      w.style.left = '';
+      w.style.top = '';
+      w.style.width = '';
+      w.style.height = '';
+    });
+  }
+
+  function enterEditMode() {
+    editing = true;
+    const layout = snapshotPositions();
+    grid.classList.add('has-layout', 'edit-mode');
+    applyLayout(layout);
+    banner.classList.add('visible');
+    editBtn.classList.add('active');
+  }
+
+  function exitEditMode() {
+    editing = false;
+    // Save final positions
+    const layout = getLayout();
+    widgets.forEach(w => {
+      if (w.style.display !== 'none') {
+        layout[w.id] = {
+          x: parseFloat(w.style.left) || 0,
+          y: parseFloat(w.style.top) || 0,
+          w: w.offsetWidth,
+          h: w.offsetHeight
+        };
+      }
+    });
+    saveLayout(layout);
+
+    // Remove edit chrome but KEEP has-layout for absolute positioning
+    grid.classList.remove('edit-mode');
+    banner.classList.remove('visible');
+    editBtn.classList.remove('active');
+
+    // Re-apply full positions (x, y, w, h) — keeps absolute layout
+    applyLayout(layout);
+  }
+
+  // Toggle
+  editBtn.addEventListener('click', () => {
+    if (editing) exitEditMode();
+    else enterEditMode();
+  });
+  doneBtn.addEventListener('click', () => exitEditMode());
+  
+  const editWidgetsBtn = document.getElementById('edit-widgets-btn');
+  if (editWidgetsBtn) {
+    editWidgetsBtn.addEventListener('click', () => {
+      document.getElementById('settings-panel').classList.add('open');
+      document.querySelectorAll('.settings-tab').forEach(b => b.classList.remove('active'));
+      const ts = document.querySelector('[data-stab="widgets"]');
+      if (ts) ts.classList.add('active');
+      document.querySelectorAll('.stab-pane').forEach(p => p.classList.remove('active'));
+      const ps = document.getElementById('stab-widgets');
+      if (ps) ps.classList.add('active');
+    });
+  }
+
+  // Widget Removal
+  document.querySelectorAll('.widget-remove-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const widgetId = btn.dataset.remove;
+      const widget = document.getElementById(widgetId);
+      if (widget) {
+        // Find toggle and uncheck it
+        const widgetType = widget.dataset.widget;
+        if (widgetType) {
+          const toggle = document.getElementById('t-' + widgetType);
+          if (toggle) toggle.checked = false;
+        }
+        widget.style.display = 'none';
+        // Also remove from S to remember
+        if (!S.hiddenWidgets) S.hiddenWidgets = [];
+        if (!S.hiddenWidgets.includes(widgetId)) {
+          S.hiddenWidgets.push(widgetId);
+          save();
+        }
+      }
+    });
+  });
+
+  // ===== DRAG TO MOVE =====
+  widgets.forEach(w => {
+    const handle = w.querySelector('.widget-drag-handle');
+    if (!handle) return;
+
+    handle.addEventListener('mousedown', (e) => {
+      if (!editing) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      dragTarget = w;
+      startX = e.clientX;
+      startY = e.clientY;
+      startLeft = parseFloat(w.style.left) || 0;
+      startTop = parseFloat(w.style.top) || 0;
+
+      w.classList.add('is-dragging');
+      overlay.style.display = 'block';
+      overlay.classList.add('dragging');
+    });
+  });
+
+  // ===== RESIZE =====
+  document.querySelectorAll('.resize-handle').forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      if (!editing) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const widgetId = handle.dataset.resize;
+      resizeTarget = document.getElementById(widgetId);
+      if (!resizeTarget) return;
+
+      startX = e.clientX;
+      startY = e.clientY;
+      startW = resizeTarget.offsetWidth;
+      startH = resizeTarget.offsetHeight;
+
+      resizeTarget.classList.add('is-dragging');
+      overlay.style.display = 'block';
+      overlay.classList.add('resizing');
+    });
+  });
+
+  // Mouse move — handles both drag and resize
+  document.addEventListener('mousemove', (e) => {
+    if (dragTarget) {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      dragTarget.style.left = (startLeft + dx) + 'px';
+      dragTarget.style.top = (startTop + dy) + 'px';
+    }
+    if (resizeTarget) {
+      const newW = Math.max(120, startW + (e.clientX - startX));
+      const newH = Math.max(60, startH + (e.clientY - startY));
+      resizeTarget.style.width = newW + 'px';
+      resizeTarget.style.height = newH + 'px';
+    }
+  });
+
+  // Mouse up — end drag or resize
+  document.addEventListener('mouseup', () => {
+    if (dragTarget) {
+      dragTarget.classList.remove('is-dragging');
+      dragTarget = null;
+    }
+    if (resizeTarget) {
+      resizeTarget.classList.remove('is-dragging');
+      resizeTarget = null;
+    }
+    overlay.style.display = 'none';
+    overlay.classList.remove('dragging', 'resizing');
+  });
+
+  // On load: if there's a saved layout, apply full positions
+  const saved = getLayout();
+  if (Object.keys(saved).length > 0) {
+    grid.classList.add('has-layout');
+    applyLayout(saved);
+  }
+
+  return { enterEditMode, exitEditMode, getLayout, applyLayout };
+})();
+
+// ===== STATE =====
+let S = loadState();
+let calM, calY;
+
+// Handle hidden widgets on load
+if (!S.hiddenWidgets) S.hiddenWidgets = [];
+S.hiddenWidgets.forEach(wid => {
+  const w = document.getElementById(wid);
+  if (w) w.style.display = 'none';
+  const wType = w ? w.dataset.widget : null;
+  if (wType) {
+    const t = document.getElementById('t-' + wType);
+    if (t) t.checked = false;
+  }
+});
+
+// DevTo Edit Overlay
+const devtoWidget = document.getElementById('widget-devto');
+if (devtoWidget && !devtoWidget.querySelector('.devto-edit-overlay')) {
+  const overlay = document.createElement('div');
+  overlay.className = 'devto-edit-overlay';
+  overlay.innerHTML = '<button class="devto-edit-btn">Edit Feed</button>';
+  devtoWidget.appendChild(overlay);
+  overlay.querySelector('button').addEventListener('click', () => {
+    alert("Devto feed settings coming soon!");
+  });
+}
+
+function loadState() {
+  const d = localStorage.getItem(STORE_KEY);
+  const defaults = {
+    city: 'Ahmedabad',
+    wallpaper: '',
+    engine: 'Google',
+    tasks: { todo: [], wip: [], done: [] },
+    labels: [
+      { id: 1, name: 'LABEL 1', color: '#ff6b6b' },
+      { id: 2, name: 'LABEL 2', color: '#b8c0ff' },
+    ],
+    nextLabelId: 3,
+    notes: [
+      { id: 1, text: 'Type here...', color: '#f5e960', x: 670, y: 350 },
+    ],
+    nextNoteId: 2,
+  };
+  if (!d) return defaults;
+  try {
+    const parsed = JSON.parse(d);
+    return { ...defaults, ...parsed };
+  } catch { return defaults; }
+}
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(S)); }
+
+// ===== CLOCK =====
+function updateClock() {
+  const now = new Date();
+  let h = now.getHours();
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  document.getElementById('clock-time').innerHTML =
+    `${h}:${m}<span class="clock-ampm">${ampm}</span>`;
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ===== CALENDAR =====
+function initCal() {
+  const now = new Date();
+  calM = now.getMonth();
+  calY = now.getFullYear();
+  renderCal();
+}
+
+function renderCal() {
+  const now = new Date();
+  const todayD = now.getDate(), todayM = now.getMonth(), todayY = now.getFullYear();
+  document.getElementById('cal-month-text').textContent = `${MONTHS[calM]} ${calY}`;
+  const smallHeader = document.getElementById('cal-small-header');
+  if (smallHeader) smallHeader.textContent = MONTHS[calM].toUpperCase();
+  const dayName = calM === todayM && calY === todayY ? DAYS_FULL[now.getDay()] : '';
+  document.getElementById('cal-day-name').textContent = dayName;
+  document.getElementById('cal-day-big').textContent =
+    calM === todayM && calY === todayY ? todayD : '';
+
+  const first = new Date(calY, calM, 1);
+  let startDay = first.getDay() - 1;
+  if (startDay < 0) startDay = 6;
+  const daysInMonth = new Date(calY, calM + 1, 0).getDate();
+  const prevDays = new Date(calY, calM, 0).getDate();
+
+  const grid = document.getElementById('cal-grid');
+  let html = WK.map((d, i) =>
+    `<div class="cal-wk${i >= 5 ? ' we' : ''}">${d}</div>`
+  ).join('');
+
+  for (let i = 0; i < startDay; i++) {
+    html += `<div class="cal-d om">${prevDays - startDay + 1 + i}</div>`;
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = (startDay + d - 1) % 7;
+    const isWe = dow >= 5;
+    const isToday = d === todayD && calM === todayM && calY === todayY;
+    html += `<div class="cal-d${isToday ? ' today' : ''}${isWe ? ' we' : ''}">${d}</div>`;
+  }
+  const totalCells = startDay + daysInMonth;
+  const remaining = (7 - (totalCells % 7)) % 7;
+  for (let i = 1; i <= remaining; i++) {
+    html += `<div class="cal-d om">${i}</div>`;
+  }
+  grid.innerHTML = html;
+}
+
+document.getElementById('cal-prev').addEventListener('click', () => { calM--; if (calM < 0) { calM = 11; calY--; } renderCal(); });
+document.getElementById('cal-next').addEventListener('click', () => { calM++; if (calM > 11) { calM = 0; calY++; } renderCal(); });
+
+// ===== WEATHER =====
+function fetchWeather() {
+  const city = S.city || 'Ahmedabad';
+  document.getElementById('w-city').textContent = city;
+  fetch(`https://wttr.in/${encodeURIComponent(city)}?format=%C+%t&m`)
+    .then(r => r.text())
+    .then(data => {
+      const parts = data.trim().split(/\s+/);
+      const temp = parts.pop();
+      const cond = parts.join(' ').toLowerCase();
+      document.getElementById('w-temp').textContent = temp;
+      let icon = '☀️';
+      if (cond.includes('cloud')) icon = '☁️';
+      else if (cond.includes('rain') || cond.includes('drizzle')) icon = '🌧️';
+      else if (cond.includes('snow')) icon = '🌨️';
+      else if (cond.includes('thunder')) icon = '⛈️';
+      else if (cond.includes('fog') || cond.includes('mist')) icon = '🌫️';
+      else if (cond.includes('partly')) icon = '⛅';
+      document.getElementById('w-icon').textContent = icon;
+    })
+    .catch(() => {
+      document.getElementById('w-temp').textContent = '--°';
+      document.getElementById('w-city').textContent = city;
+    });
+}
+
+// ===== KANBAN =====
+function renderKanban() {
+  ['todo', 'wip', 'done'].forEach(col => {
+    const elId = col === 'todo' ? 'k-todo' : col === 'wip' ? 'k-wip' : 'k-done';
+    const container = document.getElementById(elId);
+    const tasks = S.tasks[col];
+
+    if (tasks.length === 0) {
+      container.innerHTML = '<div class="kanban-empty">No tasks</div>';
+    } else {
+      container.innerHTML = tasks.map((t, i) => {
+        const labelsHtml = (t.labels || []).map(lId => {
+          const l = S.labels.find(lb => lb.id === lId);
+          if (!l) return '';
+          return `<span class="task-label" style="background:${l.color};color:#fff">${l.name}</span>`;
+        }).join('');
+        const priorClass = t.priority && t.priority !== 'normal' ? ' priority-' + t.priority : '';
+        return `<div class="task-card${priorClass}" draggable="true" data-col="${col}" data-idx="${i}">
+          <div class="task-top">${labelsHtml}<span class="task-drag">⋮⋮</span></div>
+          <div class="task-title">${t.title}</div>
+        </div>`;
+      }).join('');
+    }
+
+    // Drag and drop between columns
+    container.addEventListener('dragover', (e) => { e.preventDefault(); container.classList.add('drag-over'); });
+    container.addEventListener('dragleave', () => container.classList.remove('drag-over'));
+    container.addEventListener('drop', (e) => {
+      e.preventDefault();
+      container.classList.remove('drag-over');
+      const fromCol = e.dataTransfer.getData('col');
+      const fromIdx = parseInt(e.dataTransfer.getData('idx'));
+      if (fromCol && !isNaN(fromIdx)) {
+        const task = S.tasks[fromCol].splice(fromIdx, 1)[0];
+        if (task) { S.tasks[col].push(task); save(); renderKanban(); }
+      }
+    });
+  });
+
+  document.querySelectorAll('.task-card').forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('col', card.dataset.col);
+      e.dataTransfer.setData('idx', card.dataset.idx);
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+  });
+}
+
+// Create Task Modal
+const taskModal = document.getElementById('task-modal');
+let selectedLabels = [];
+
+document.getElementById('kanban-add').addEventListener('click', () => {
+  selectedLabels = [];
+  document.getElementById('task-title-input').value = '';
+  document.getElementById('task-url-input').value = '';
+  document.getElementById('task-desc-input').value = '';
+  document.getElementById('task-priority').value = 'normal';
+  renderTaskLabels();
+  taskModal.classList.add('open');
+});
+
+function renderTaskLabels() {
+  const container = document.getElementById('task-label-chips');
+  container.innerHTML = S.labels.map(l => {
+    const sel = selectedLabels.includes(l.id) ? ' selected' : '';
+    return `<span class="label-chip${sel}" data-lid="${l.id}" style="background:${l.color};color:#fff">${l.name}</span>`;
+  }).join('');
+  container.querySelectorAll('.label-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const lid = parseInt(chip.dataset.lid);
+      if (selectedLabels.includes(lid)) {
+        selectedLabels = selectedLabels.filter(id => id !== lid);
+      } else {
+        selectedLabels.push(lid);
+      }
+      renderTaskLabels();
+    });
+  });
+}
+
+document.getElementById('task-modal-close').addEventListener('click', () => taskModal.classList.remove('open'));
+document.getElementById('task-create-btn').addEventListener('click', () => {
+  const title = document.getElementById('task-title-input').value.trim();
+  if (!title) return;
+  S.tasks.todo.push({
+    title,
+    labels: [...selectedLabels],
+    url: document.getElementById('task-url-input').value.trim(),
+    desc: document.getElementById('task-desc-input').value.trim(),
+    priority: document.getElementById('task-priority').value,
+  });
+  save(); renderKanban();
+  taskModal.classList.remove('open');
+});
+
+// Clear done
+document.getElementById('kanban-clear').addEventListener('click', () => {
+  S.tasks.done = []; save(); renderKanban();
+});
+
+// Label modal
+const labelModal = document.getElementById('label-modal');
+let selLabelColor = LABEL_COLORS[0];
+
+document.getElementById('open-label-modal').addEventListener('click', () => {
+  document.getElementById('label-name-input').value = '';
+  selLabelColor = LABEL_COLORS[0];
+  renderLabelColors();
+  labelModal.classList.add('open');
+});
+
+function renderLabelColors() {
+  const container = document.getElementById('label-color-circles');
+  container.innerHTML = LABEL_COLORS.map(c => {
+    const sel = c === selLabelColor ? ' selected' : '';
+    return `<div class="color-circle${sel}" data-color="${c}" style="background:${c}"></div>`;
+  }).join('');
+  container.querySelectorAll('.color-circle').forEach(circle => {
+    circle.addEventListener('click', () => {
+      selLabelColor = circle.dataset.color;
+      renderLabelColors();
+    });
+  });
+}
+
+document.getElementById('label-modal-close').addEventListener('click', () => labelModal.classList.remove('open'));
+document.getElementById('label-create-btn').addEventListener('click', () => {
+  const name = document.getElementById('label-name-input').value.trim();
+  if (!name) return;
+  S.labels.push({ id: S.nextLabelId++, name, color: selLabelColor });
+  save(); renderTaskLabels();
+  labelModal.classList.remove('open');
+});
+
+// ===== STICKY NOTES =====
+let notesVisible = true;
+function renderNotes() {
+  // Remove existing loose notes first
+  document.querySelectorAll('.sticky-note-loose').forEach(n => n.remove());
+  if (!notesVisible) return;
+  
+  const container = document.getElementById('main-grid');
+  
+  S.notes.forEach(n => {
+    const noteEl = document.createElement('div');
+    noteEl.className = 'sticky-note sticky-note-loose';
+    noteEl.dataset.nid = n.id;
+    noteEl.style.background = n.color;
+    noteEl.style.position = 'fixed'; // Float over everything safely
+    noteEl.style.left = n.x + 'px';
+    noteEl.style.top = n.y + 'px';
+    noteEl.style.zIndex = 40;
+    
+    noteEl.innerHTML = `
+      <div class="sticky-actions" style="position: absolute; top:4px; right:6px; display:flex; gap:4px; opacity:0; transition:opacity 0.2s;">
+        <button class="sticky-color-btn" data-colorbtn="${n.id}" style="background:none; border:none; cursor:pointer; font-size:12px; opacity:0.6;">🎨</button>
+        <button class="sticky-delete" data-del="${n.id}" style="background:none; border:none; cursor:pointer; font-size:12px; opacity:0.6; position:static;">✕</button>
+      </div>
+      <textarea data-ntext="${n.id}" style="margin-top:10px;">${n.text}</textarea>
+    `;
+    container.appendChild(noteEl);
+
+    noteEl.onmouseenter = () => { noteEl.querySelector('.sticky-actions').style.opacity = '1'; };
+    noteEl.onmouseleave = () => { noteEl.querySelector('.sticky-actions').style.opacity = '0'; };
+    
+    // palette
+    const colorBtn = noteEl.querySelector('.sticky-color-btn');
+    if (colorBtn) {
+      colorBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const nid = parseInt(colorBtn.dataset.colorbtn);
+        const n = S.notes.find(nn => nn.id === nid);
+        if (n) {
+          const idx = NOTE_COLORS.indexOf(n.color);
+          n.color = NOTE_COLORS[(idx + 1) % NOTE_COLORS.length];
+          noteEl.style.background = n.color;
+          save();
+        }
+      });
+    }
+
+    let isDragging = false, sx, sy, nx, ny;
+    let clickTarget = null;
+    noteEl.addEventListener('mousedown', (e) => {
+      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') return;
+      isDragging = true;
+      clickTarget = e.target;
+      sx = e.clientX; sy = e.clientY;
+      nx = parseFloat(noteEl.style.left);
+      ny = parseFloat(noteEl.style.top);
+      noteEl.style.zIndex = 50;
+      noteEl.style.cursor = 'grabbing';
+      e.preventDefault(); // crucial to prevent text selection while dragging
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      noteEl.style.left = (nx + e.clientX - sx) + 'px';
+      noteEl.style.top = (ny + e.clientY - sy) + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      noteEl.style.zIndex = 40;
+      noteEl.style.cursor = 'grab';
+      const nid = parseInt(noteEl.dataset.nid);
+      const n = S.notes.find(n => n.id === nid);
+      if (n) { n.x = parseFloat(noteEl.style.left); n.y = parseFloat(noteEl.style.top); save(); }
+    });
+
+    const delBtn = noteEl.querySelector('.sticky-delete');
+    if(delBtn) {
+      delBtn.addEventListener('click', () => {
+        const id = parseInt(delBtn.dataset.del);
+        S.notes = S.notes.filter(n => n.id !== id);
+        save(); renderNotes();
+      });
+    }
+
+    const ta = noteEl.querySelector('textarea[data-ntext]');
+    if(ta) {
+      ta.addEventListener('input', () => {
+        const id = parseInt(ta.dataset.ntext);
+        const n = S.notes.find(n => n.id === id);
+        if (n) { n.text = ta.value; save(); }
+      });
+    }
+  });
+}
+
+document.getElementById('note-add').addEventListener('click', () => {
+  S.notes.push({
+    id: S.nextNoteId++,
+    text: '',
+    color: NOTE_COLORS[S.notes.length % NOTE_COLORS.length],
+    x: Math.random() * (window.innerWidth - 220),
+    y: 100 + Math.random() * (window.innerHeight - 320),
+  });
+  save(); renderNotes();
+});
+document.getElementById('note-toggle').addEventListener('click', () => {
+  notesVisible = !notesVisible;
+  renderNotes();
+});
+
+// ===== DEV.TO FEED =====
+let devArticles = [];
+
+function fetchDev(tag = '') {
+  const url = tag ? `https://dev.to/api/articles?tag=${tag}&per_page=5` : 'https://dev.to/api/articles?per_page=5';
+  fetch(url)
+    .then(r => r.json())
+    .then(articles => {
+      devArticles = articles;
+      renderDev();
+    })
+    .catch(() => {
+      document.getElementById('devto-articles').innerHTML =
+        '<div style="color:var(--text-dim);text-align:center;padding:20px;font-size:12px">Unable to load articles</div>';
+    });
+}
+
+function renderDev() {
+  const container = document.getElementById('devto-articles');
+  container.innerHTML = devArticles.slice(0, 5).map(a => `
+    <div class="devto-article">
+      <img class="devto-avatar" src="${a.user?.profile_image_90 || ''}" alt="" loading="lazy">
+      <div class="devto-content">
+        <div class="devto-author">${a.user?.name || 'Author'} · ${a.readable_publish_date || ''}</div>
+        <div class="devto-title"><a href="${a.url}" target="_blank">${a.title}</a></div>
+        <div class="devto-meta">
+          <span>${a.reading_time_minutes || '?'} min read</span>
+          <span>${a.tag_list?.join(', ') || ''}</span>
+          <span>${a.comments_count || 0} comments</span>
+        </div>
+      </div>
+      <div class="devto-votes">▲ ${a.public_reactions_count || 0}</div>
+    </div>
+  `).join('');
+}
+
+document.querySelectorAll('.devto-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.devto-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    if (tab === 'fresh') fetchDev('javascript');
+    else if (tab === 'rising') fetchDev('webdev');
+    else fetchDev();
+  });
+});
+
+// ===== SEARCH =====
+const engineNames = Object.keys(ENGINES);
+let engineIdx = engineNames.indexOf(S.engine) >= 0 ? engineNames.indexOf(S.engine) : 0;
+
+const searchInput = document.getElementById('search-input');
+const searchClear = document.getElementById('search-clear');
+if (searchInput && searchClear) {
+  searchInput.addEventListener('input', () => {
+    searchClear.style.display = searchInput.value.length > 0 ? 'block' : 'none';
+  });
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    searchClear.style.display = 'none';
+    searchInput.focus();
+  });
+}
+
+document.getElementById('search-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const q = e.target.value.trim();
+    if (q) {
+      const url = ENGINES[engineNames[engineIdx]] + encodeURIComponent(q);
+      const searchModal = document.getElementById('search-modal');
+      const searchIframe = document.getElementById('search-iframe');
+      if(searchModal && searchIframe) {
+        // Prevent generic 'X-Frame-Options: SAMEORIGIN' blocks on modern search engines
+        // Note: For full production use with Google/Bing, a backend proxy is required
+        // due to strict X-Frame-Options policies. We'll use Bing for the demo.
+        let finalUrl = url;
+        // Default Google/Bing block iframes. DuckDuckGo or Bing embedded works better.
+        if (engineNames[engineIdx] === 'Google') finalUrl = 'https://www.bing.com/search?q=' + encodeURIComponent(q);
+        
+        searchIframe.src = finalUrl;
+        searchModal.classList.add('open');
+      }
+    }
+  }
+});
+
+const searchCloseBtn = document.getElementById('search-modal-close');
+if(searchCloseBtn) {
+  searchCloseBtn.addEventListener('click', () => {
+    document.getElementById('search-modal').classList.remove('open');
+    document.getElementById('search-iframe').src = '';
+  });
+}
+
+// ===== WALLPAPER =====
+function applyWallpaper() {
+  const bg = document.getElementById('bg-wallpaper');
+  if (S.wallpaper) {
+    bg.style.backgroundImage = `url('${S.wallpaper}')`;
+  }
+}
+
+// ===== SETTINGS =====
+const settingsPanel = document.getElementById('settings-panel');
+document.getElementById('settings-btn').addEventListener('click', () => {
+  settingsPanel.classList.add('open');
+  document.getElementById('s-city').value = S.city || '';
+  document.getElementById('s-wall').value = S.wallpaper || '';
+  document.getElementById('s-engine').value = S.engine || 'Google';
+  document.getElementById('s-lang').value = S.lang || 'en';
+  const h = document.getElementById('s-24h');
+  if(h) h.checked = !!S.use24h;
+  
+  if (S.hiddenWidgets) {
+    ['clock', 'calendar', 'kanban', 'notes', 'devto', 'search'].forEach(w => {
+      const toggle = document.getElementById('t-' + w);
+      if (toggle) {
+        toggle.checked = !S.hiddenWidgets.includes(w === 'notes' ? 'widget-stickies' : 'widget-' + w);
+      }
+    });
+  }
+});
+
+document.querySelectorAll('.settings-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.settings-tab').forEach(b => b.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.stab-pane').forEach(p => p.classList.remove('active'));
+    const ts = document.getElementById('stab-' + tab.dataset.stab);
+    if(ts) ts.classList.add('active');
+  });
+});
+
+const closeX = document.getElementById('settings-close-x');
+if(closeX) closeX.addEventListener('click', () => {
+  settingsPanel.classList.remove('open');
+});
+
+document.getElementById('settings-save').addEventListener('click', () => {
+  S.city = document.getElementById('s-city').value.trim();
+  S.wallpaper = document.getElementById('s-wall').value.trim();
+  const eng = document.getElementById('s-engine');
+  if(eng) S.engine = eng.value;
+  const lang = document.getElementById('s-lang');
+  if(lang) S.lang = lang.value;
+  const h = document.getElementById('s-24h');
+  if(h) S.use24h = h.checked;
+  
+  S.hiddenWidgets = [];
+  const map = {
+    'clock': 'widget-clock',
+    'calendar': 'widget-calendar',
+    'kanban': 'widget-kanban',
+    'notes': 'widget-notes-header',
+    'stickies': 'widget-stickies',
+    'devto': 'widget-devto',
+    'search': 'search-input'
+  };
+  ['clock', 'calendar', 'kanban', 'notes', 'devto'].forEach(w => {
+    const toggle = document.getElementById('t-' + w);
+    if (toggle && !toggle.checked) {
+      if (w === 'notes') {
+        S.hiddenWidgets.push(map['notes']);
+        notesVisible = false;
+        renderNotes();
+      } else {
+        S.hiddenWidgets.push(map[w]);
+      }
+    } else if (w === 'notes' && toggle && toggle.checked) {
+      notesVisible = true;
+      renderNotes();
+    }
+  });
+  
+  save();
+  applyWallpaper();
+  fetchWeather();
+  updateClock();
+  
+  document.querySelectorAll('.widget').forEach(w => w.style.display = 'block');
+  S.hiddenWidgets.forEach(wid => {
+    const w = document.getElementById(wid);
+    if(w) w.style.display = 'none';
+  });
+  
+  if (document.getElementById('main-grid').classList.contains('has-layout')) {
+    LayoutManager.applyLayout(LayoutManager.getLayout());
+  }
+  
+  settingsPanel.classList.remove('open');
+});
+
+// ===== INIT =====
+initCal();
+applyWallpaper();
+fetchWeather();
+renderKanban();
+renderNotes();
+fetchDev();
