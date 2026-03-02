@@ -18,79 +18,37 @@ let S = {};
 let calM, calY;
 let LAYOUT_FILE_DATA = { state: {}, layout: {} };
 
-// ===== SILENT STORAGE (LocalStorage + IndexedDB + Cache API) =====
-const SilentStorage = {
-  cacheName: 'casca-silent-v1',
-  dbName: 'CascaDB',
-  dbStore: 'DashboardState',
-  dataUrl: 'https://casca.internal/state.json',
+// ===== CLOUD STORAGE (ExtendsClass API) =====
+const CloudStorage = {
+  binId: ENV.CLOUD_STORAGE_BIN_ID,
+  apiKey: ENV.CLOUD_STORAGE_API_KEY,
+  baseUrl: ENV.CLOUD_STORAGE_BASE_URL,
 
-  _dbPromise: null,
-  getDB() {
-    if (this._dbPromise) return this._dbPromise;
-    this._dbPromise = new Promise((resolve) => {
-      const req = indexedDB.open(this.dbName, 1);
-      req.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains(this.dbStore)) {
-          db.createObjectStore(this.dbStore);
+  async save(data) {
+    return new Promise((resolve) => {
+      const request = new XMLHttpRequest();
+      request.open("PUT", this.baseUrl + this.binId, true);
+      request.setRequestHeader("Security-key", this.apiKey);
+      request.onreadystatechange = () => {
+        if (request.readyState === 4) resolve(request.status === 200);
+      };
+      request.send(JSON.stringify(data));
+    });
+  },
+
+  async load() {
+    return new Promise((resolve) => {
+      const request = new XMLHttpRequest();
+      request.open("GET", this.baseUrl + this.binId, true);
+      request.onreadystatechange = () => {
+        if (request.readyState === 4) {
+          if (request.status === 200) {
+            try { resolve(JSON.parse(request.responseText)); } catch(e) { resolve(null); }
+          } else { resolve(null); }
         }
       };
-      req.onsuccess = (e) => resolve(e.target.result);
-      req.onerror = () => resolve(null);
+      request.send();
     });
-    return this._dbPromise;
-  },
-
-  async save(key, data) {
-    // 1. LocalStorage
-    try { localStorage.setItem(key, JSON.stringify(data)); } catch(e){}
-
-    // 2. IndexedDB
-    const db = await this.getDB();
-    if (db) {
-      const tx = db.transaction(this.dbStore, 'readwrite');
-      tx.objectStore(this.dbStore).put(data, key);
-    }
-
-    // 3. Cache API
-    if ('caches' in window) {
-      try {
-        const cache = await caches.open(this.cacheName);
-        const response = new Response(JSON.stringify(data), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-        await cache.put(this.dataUrl + '?key=' + key, response);
-      } catch (e) { console.warn("Cache save failed", e); }
-    }
-  },
-
-  async load(key) {
-    // 1. Try LocalStorage
-    const local = localStorage.getItem(key);
-    if (local) try { return JSON.parse(local); } catch(e){}
-
-    // 2. Try IndexedDB
-    const db = await this.getDB();
-    if (db) {
-      const val = await new Promise(r => {
-        const tx = db.transaction(this.dbStore, 'readonly');
-        const req = tx.objectStore(this.dbStore).get(key);
-        req.onsuccess = () => r(req.result);
-        req.onerror = () => r(null);
-      });
-      if (val) return val;
-    }
-
-    // 3. Try Cache API Fallback
-    if ('caches' in window) {
-      try {
-        const cache = await caches.open(this.cacheName);
-        const response = await cache.match(this.dataUrl + '?key=' + key);
-        if (response) return await response.json();
-      } catch (e) { console.warn("Cache load failed", e); }
-    }
-    return null;
   }
 };
 
@@ -108,17 +66,14 @@ const LayoutManager = (() => {
   let startX, startY, startLeft, startTop, startW, startH;
 
   function getLayout() {
-    const fileLayout = LAYOUT_FILE_DATA.layout || {};
-    const local = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
-    return { ...fileLayout, ...local };
+    return LAYOUT_FILE_DATA.layout || {};
   }
   async function getLayoutAsync() {
-    const fileLayout = LAYOUT_FILE_DATA.layout || {};
-    const stored = await SilentStorage.load(LAYOUT_KEY) || {};
-    return { ...fileLayout, ...stored };
+    return LAYOUT_FILE_DATA.layout || {};
   }
   function saveLayout(layout) {
-    SilentStorage.save(LAYOUT_KEY, layout);
+    LAYOUT_FILE_DATA.layout = layout;
+    save();
   }
 
   // Snapshot current bounding rects relative to grid
@@ -330,54 +285,92 @@ const LayoutManager = (() => {
     overlay.classList.remove('dragging', 'resizing');
   });
 
-  // On load: if there's a saved layout, apply full positions
   const saved = getLayout();
   if (Object.keys(saved).length > 0) {
     grid.classList.add('has-layout');
     applyLayout(saved);
   }
 
-  return { enterEditMode, exitEditMode, getLayout, applyLayout };
+  function applyState(stored) {
+    const defaults = {
+      wallpaper: '',
+      engine: 'Google',
+      tasks: { todo: [], wip: [], done: [] },
+      labels: [
+        { id: 1, name: 'LABEL 1', color: '#ff6b6b' },
+        { id: 2, name: 'LABEL 2', color: '#b8c0ff' },
+      ],
+      nextLabelId: 3,
+      notes: [
+        { id: 1, text: 'Type here...', color: '#f5e960', x: 670, y: 350 },
+      ],
+      nextNoteId: 2,
+      hiddenWidgets: []
+    };
+
+    const fileState = LAYOUT_FILE_DATA.state || {};
+    let baseState = { ...defaults, ...fileState };
+    
+    // Apply hidden widgets from state
+    const hidden = (stored && stored.hiddenWidgets) || baseState.hiddenWidgets || [];
+    hidden.forEach(wid => {
+      const w = document.getElementById(wid);
+      if (w) w.style.display = 'none';
+      const wType = w ? w.dataset.widget : null;
+      if (wType) {
+        const t = document.getElementById('t-' + wType);
+        if (t) t.checked = false;
+      }
+    });
+
+    if (!stored) return baseState;
+    return { ...baseState, ...stored };
+  }
+
+  return {
+    getLayout,
+    getLayoutAsync,
+    saveLayout,
+    snapshotPositions,
+    applyLayout,
+    clearInlineStyles,
+    enterEditMode,
+    exitEditMode,
+    applyState
+  };
 })();
 
-function initPersistence() {
-  // 1. Load from savedLayout.json as "Base Defaults" (if exists)
-  fetch('savedLayout.json')
-    .then(res => res.ok ? res.json() : { state: {}, layout: {} })
-    .catch(() => ({ state: {}, layout: {} }))
-    .then(async (fileData) => {
-      LAYOUT_FILE_DATA = fileData;
-      
-      // 2. Try Silent Storage (LocalStorage -> Cache API)
-      const storedState = await SilentStorage.load(STORE_KEY);
-      S = loadState(storedState);
-      
-      // Apply hidden widgets on load
-      if (!S.hiddenWidgets) S.hiddenWidgets = [];
-      S.hiddenWidgets.forEach(wid => {
-        const w = document.getElementById(wid);
-        if (w) w.style.display = 'none';
-        const wType = w ? w.dataset.widget : null;
-        if (wType) {
-          const t = document.getElementById('t-' + wType);
-          if (t) t.checked = false;
-        }
+
+async function initPersistence() {
+  // 1. Load from Cloud
+  const cloudData = await CloudStorage.load();
+  if (cloudData) {
+    LAYOUT_FILE_DATA = cloudData;
+    S = LayoutManager.applyState(cloudData.state || {});
+    LayoutManager.applyLayout(cloudData.layout || {});
+  } else {
+    // Fallback to local defaults if cloud is empty/offline
+    await fetch('savedLayout.json')
+      .then(res => res.ok ? res.json() : { state: {}, layout: {} })
+      .catch(() => ({ state: {}, layout: {} })) // Catch fetch errors too
+      .then(data => {
+        LAYOUT_FILE_DATA = data;
+        S = LayoutManager.applyState(data.state || {});
+        LayoutManager.applyLayout(data.layout || {});
       });
+  }
 
-      // Apply layout if exists
-      const saved = await LayoutManager.getLayoutAsync();
-      if (Object.keys(saved).length > 0) {
-        document.getElementById('main-grid').classList.add('has-layout');
-        LayoutManager.applyLayout(saved);
-      }
+  // Apply layout if exists (this is now handled by the cloudData/fileData logic)
+  if (Object.keys(LAYOUT_FILE_DATA.layout || {}).length > 0) {
+    document.getElementById('main-grid').classList.add('has-layout');
+  }
 
-      // Final Dashboard Init
-      initCal();
-      applyWallpaper();
-      renderKanban();
-      renderNotes();
-      fetchDev();
-    });
+  // Final Dashboard Init
+  initCal();
+  applyWallpaper();
+  renderKanban();
+  renderNotes();
+  fetchDev();
 }
 
 function loadState(stored) {
@@ -404,8 +397,14 @@ function loadState(stored) {
   return { ...baseState, ...stored };
 }
 
-function save() { 
-  SilentStorage.save(STORE_KEY, S); 
+// ===== SAVE STATE =====
+async function save() {
+  const cloudData = {
+    state: S,
+    layout: LAYOUT_FILE_DATA.layout || {} // Use LAYOUT_FILE_DATA.layout which is kept updated
+  };
+  const success = await CloudStorage.save(cloudData);
+  if (!success) console.warn("Cloud save failed.");
 }
 
 // Backup helpers (Optional Rescue)

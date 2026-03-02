@@ -269,10 +269,10 @@
       <div id="stab-storage" class="stab-pane">
         <h5>Backup & Storage</h5>
         <div class="backup-storage-grid">
-          <div class="backup-section" style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981;">
-            <h6 style="color: #10b981;">Triple-Layer Persistence Active</h6>
+          <div class="backup-section" style="background: rgba(99, 102, 241, 0.1); border: 1px solid var(--accent);">
+            <h6 style="color: var(--accent);">Cloud Persistence Active</h6>
             <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 15px; line-height: 1.5;">
-              Your dashboard uses <strong>LocalStorage + IndexedDB + Cache API</strong>. This ensures maximum stability even in restricted embedded environments (like Qt).
+              Your dashboard uses <strong>Cloud Storage (ExtendsClass)</strong>. Settings and layouts are now synced automatically across all your devices.
             </p>
           </div>
           
@@ -317,6 +317,7 @@
     </div>
   </div>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
