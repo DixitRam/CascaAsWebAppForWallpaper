@@ -1015,5 +1015,79 @@ document.getElementById('s-reset-layout').addEventListener('click', () => {
   }
 });
 
+// ===== FOCUS MODE =====
+const focusModeBtn = document.getElementById('focus-mode-btn');
+const focusExitBtn = document.getElementById('focus-exit-btn');
+const focusOverlay = document.getElementById('focus-overlay');
+const focusDateEl = document.getElementById('focus-date');
+const focusTimeEl = document.getElementById('focus-time');
+const focusSearchInput = document.getElementById('focus-search-input');
+
+const FOCUS_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const FOCUS_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+function updateFocusClock() {
+  const now = new Date();
+  const h = now.getHours();
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const displayH = S && S.use24h ? String(h).padStart(2, '0') : (h % 12 || 12);
+  if (focusTimeEl) focusTimeEl.textContent = `${displayH}:${m}`;
+  if (focusDateEl) {
+    const dayName = FOCUS_DAYS[now.getDay()];
+    const day = now.getDate();
+    const month = FOCUS_MONTHS[now.getMonth()];
+    focusDateEl.textContent = `${dayName}, ${day} ${month}`;
+  }
+}
+
+let focusClockInterval = null;
+
+function enterFocusMode() {
+  document.body.classList.add('focus-mode');
+  updateFocusClock();
+  focusClockInterval = setInterval(updateFocusClock, 1000);
+}
+
+function exitFocusMode() {
+  document.body.classList.remove('focus-mode');
+  if (focusClockInterval) {
+    clearInterval(focusClockInterval);
+    focusClockInterval = null;
+  }
+}
+
+if (focusModeBtn) {
+  focusModeBtn.addEventListener('click', enterFocusMode);
+}
+if (focusExitBtn) {
+  focusExitBtn.addEventListener('click', exitFocusMode);
+}
+
+// Focus mode search
+if (focusSearchInput) {
+  focusSearchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const q = e.target.value.trim();
+      if (q) {
+        const searchModal = document.getElementById('search-modal');
+        const searchIframe = document.getElementById('search-iframe');
+        if (searchModal && searchIframe) {
+          let finalUrl = 'https://www.bing.com/copilotsearch?q=' + encodeURIComponent(q);
+          searchIframe.src = finalUrl;
+          searchModal.classList.add('open');
+          exitFocusMode();
+        }
+      }
+    }
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.body.classList.contains('focus-mode')) {
+    exitFocusMode();
+  }
+});
+
 // ===== INIT =====
 initPersistence();
